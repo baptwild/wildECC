@@ -7,9 +7,13 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
 
+# ==============================
+# Aide
+# ==============================
+
 def show_help():
     print("""
-Script wildECC
+Script wildECC par Baptiste Sauvage IW
 Syntaxe :
     wildECC <commande> [<clé>] [<texte>] [switchs]
 
@@ -18,32 +22,63 @@ Commandes :
     crypt    : Chiffre <texte> pour la clé publique <clé>
     decrypt  : Déchiffre <texte> pour la clé privée <clé>
     help     : Affiche ce manuel
+
+Switchs :
+    -f <nom> : Nom de base des fichiers de clés (keygen)
 """)
+
+
+# ==============================
+# MAIN
+# ==============================
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] == "help":
         show_help()
         return
 
-    command = sys.argv[1]
+    # ------------------------------
+    # Gestion des switchs
+    # ------------------------------
+    filename = "monECC"
 
-    if command == "keygen":
-        k, Q = generate_keypair()
-        write_private_key(k)
-        write_public_key(Q)
-        print("Clés générées avec succès")
+    args = sys.argv[1:]
 
-
-    elif command == "crypt":
-
-        if len(sys.argv) < 4:
-            print("Usage : wildECC crypt <clé_publique> <texte>")
-
+    if "-f" in args:
+        idx = args.index("-f")
+        try:
+            filename = args[idx + 1]
+            args.pop(idx)
+            args.pop(idx)
+        except IndexError:
+            print("Erreur : -f nécessite un nom de fichier")
             return
 
-        pubkey_file = sys.argv[2]
+    command = args[0]
 
-        plaintext = sys.argv[3]
+    # ==============================
+    # KEYGEN
+    # ==============================
+    if command == "keygen":
+        if len(args) != 1:
+            print("Usage : wildECC keygen [-f <nom>]")
+            return
+
+        k, Q = generate_keypair()
+        write_private_key(k, filename + ".priv")
+        write_public_key(Q, filename + ".pub")
+        print("Clés générées avec succès")
+
+    # ==============================
+    # CRYPT
+    # ==============================
+    elif command == "crypt":
+        if len(args) != 3:
+            print("Usage : wildECC crypt <clé_publique> <texte>")
+            return
+
+        pubkey_file = args[1]
+        plaintext = args[2]
 
         Qb = read_public_key(pubkey_file)
 
@@ -63,21 +98,18 @@ def main():
         Qe_x, Qe_y = Qe
         print(f"{Qe_x};{Qe_y}|{ciphertext_b64}")
 
-
-
+    # ==============================
+    # DECRYPT
+    # ==============================
     elif command == "decrypt":
-
-        if len(sys.argv) < 4:
+        if len(args) != 3:
             print("Usage : wildECC decrypt <clé_privée> <cryptogramme>")
-
             return
 
-        privkey_file = sys.argv[2]
-
-        cryptogram = sys.argv[3]
+        privkey_file = args[1]
+        cryptogram = args[2]
 
         k = read_private_key(privkey_file)
-
         plaintext = decrypt_message(k, cryptogram)
 
         print(plaintext)
@@ -87,9 +119,8 @@ def main():
         show_help()
 
 
-
 # ==============================
-# Paramètres de la courbe ECC
+# Paramètres ECC
 # ==============================
 
 p = 101
@@ -97,11 +128,11 @@ a = 35
 b = 3
 
 P = (2, 9)
-O = None  # Point à l'infini
+O = None
 
 
 # ==============================
-# Fonctions math ECC
+# Maths ECC
 # ==============================
 
 def modinv(x):
@@ -136,42 +167,32 @@ def scalar_mult(k, P):
     addend = P
 
     while k > 0:
-        if k % 2 == 1:
+        if k & 1:
             result = point_add(result, addend)
         addend = point_add(addend, addend)
-        k = k // 2
+        k >>= 1
 
     return result
 
+
 # ==============================
-# KEYGEN – Génération des clés
+# KEYGEN
 # ==============================
 
 def generate_keypair():
-    """
-    Génère une paire de clés ECC
-    - k : clé privée
-    - Q : clé publique (Q = kP)
-    """
     k = random.randint(1, 1000)
     Q = scalar_mult(k, P)
     return k, Q
 
 
-def write_private_key(k, filename="wildECC.priv"):
-    """
-    Écrit la clé privée dans un fichier au format monECC
-    """
+def write_private_key(k, filename):
     with open(filename, "w") as f:
         f.write("---begin monECC private key---\n")
         f.write(base64.b64encode(str(k).encode()).decode() + "\n")
         f.write("---end monECC key---\n")
 
 
-def write_public_key(Q, filename="wildECC.pub"):
-    """
-    Écrit la clé publique dans un fichier au format monECC
-    """
+def write_public_key(Q, filename):
     Qx, Qy = Q
     data = f"{Qx};{Qy}"
     with open(filename, "w") as f:
@@ -181,7 +202,7 @@ def write_public_key(Q, filename="wildECC.pub"):
 
 
 # ==============================
-# Lecture des clés
+# Lecture clés
 # ==============================
 
 def read_public_key(filename):
@@ -191,9 +212,7 @@ def read_public_key(filename):
     if lines[0] != "---begin monECC public key---":
         raise ValueError("Fichier de clé publique invalide")
 
-    data = base64.b64decode(lines[1]).decode()
-    Qx, Qy = data.split(";")
-
+    Qx, Qy = base64.b64decode(lines[1]).decode().split(";")
     return int(Qx), int(Qy)
 
 
@@ -204,35 +223,27 @@ def read_private_key(filename):
     if lines[0] != "---begin monECC private key---":
         raise ValueError("Fichier de clé privée invalide")
 
-    k = base64.b64decode(lines[1]).decode()
-    return int(k)
+    return int(base64.b64decode(lines[1]).decode())
 
 
 # ==============================
-# Secret partagé & Hash
+# Secret partagé
 # ==============================
 
 def derive_shared_secret(k, Qb):
-    """
-    Calcule S = kQb puis retourne un hash SHA256 exploitable
-    Refuse le point à l'infini
-    """
     S = scalar_mult(k, Qb)
-
     if S is None:
-        raise ValueError("Secret partagé invalide (point à l'infini)")
+        raise ValueError("Secret partagé invalide")
 
     Sx, Sy = S
-
     h = hashlib.sha256()
     h.update(str(Sx).encode())
     h.update(str(Sy).encode())
-
     return h.digest()
 
 
 # ==============================
-# AES – Chiffrement / Déchiffrement
+# AES
 # ==============================
 
 def aes_encrypt(key_material, plaintext):
@@ -240,53 +251,30 @@ def aes_encrypt(key_material, plaintext):
     key = key_material[16:32]
 
     padder = padding.PKCS7(128).padder()
-    padded_data = padder.update(plaintext.encode())
-    padded_data += padder.finalize()
+    padded = padder.update(plaintext.encode()) + padder.finalize()
 
-    cipher = Cipher(
-        algorithms.AES(key),
-        modes.CBC(iv),
-        backend=default_backend()
-    )
-
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
     encryptor = cipher.encryptor()
-    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+    return encryptor.update(padded) + encryptor.finalize()
 
-    return ciphertext
-
-# ==============================
-# DÉCHIFFREMENT ECC
-# ==============================
 
 def aes_decrypt(key_material, ciphertext):
     iv = key_material[:16]
     key = key_material[16:32]
 
-    cipher = Cipher(
-        algorithms.AES(key),
-        modes.CBC(iv),
-        backend=default_backend()
-    )
-
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
     decryptor = cipher.decryptor()
-    padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
 
     unpadder = padding.PKCS7(128).unpadder()
-    plaintext = unpadder.update(padded_plaintext)
-    plaintext += unpadder.finalize()
-
-    return plaintext.decode()
+    return (unpadder.update(padded) + unpadder.finalize()).decode()
 
 
 # ==============================
-# Décryptage EC-ElGamal
+# Decrypt EC-ElGamal
 # ==============================
+
 def decrypt_message(kb, cryptogram):
-    """
-    Déchiffre un message ECC-AES
-    cryptogram = Qe_x;Qe_y|ciphertext_base64
-    """
-
     try:
         point_part, cipher_part = cryptogram.split("|")
         Qe_x, Qe_y = point_part.split(";")
@@ -301,21 +289,11 @@ def decrypt_message(kb, cryptogram):
         raise ValueError("Secret partagé invalide")
 
     Sx, Sy = S
-
     h = hashlib.sha256()
     h.update(str(Sx).encode())
     h.update(str(Sy).encode())
-    key_material = h.digest()
+    return aes_decrypt(h.digest(), ciphertext)
 
-    return aes_decrypt(key_material, ciphertext)
-
-#
-# ==============================
-# Tests manuels (TEMPORAIRES)
-# ==============================
 
 if __name__ == "__main__":
     main()
-
-
-
